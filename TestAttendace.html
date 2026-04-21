@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FlyBy">
+  <meta name="theme-color" content="#CE1126">
+  <link rel="manifest" href="manifest.json">
+  <title>FlyBy — ISU Attendance</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<main id="app"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.7.1/firebase-app-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.7.1/firebase-firestore-compat.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --isu:#CE1126;--isu-dark:#A50D1E;--isu-light:#FDECEA;
+  --bg:#FFFFFF;--bg2:#F5F5F5;--bg3:#EBEBEB;
+  --border:rgba(0,0,0,0.10);--border2:rgba(0,0,0,0.18);
+  --text:#212121;--text2:#595959;--text3:#9E9E9E;
+  --green:#1E7E4A;--green-bg:#E8F5E9;--green-br:rgba(30,126,74,0.2);
+  --amber:#92400e;--amber-bg:#FFF8E1;--amber-br:rgba(146,64,14,0.2);
+  --red:#CE1126;--red-bg:#FDECEA;--blue:#1565C0;--blue-bg:#E3F2FD;
+  --r-sm:6px;--r-md:10px;--r-lg:16px;--scan-h:280px;--header-h:56px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#121212;--bg2:#1e1e1e;--bg3:#000000;
+    --border:rgba(255,255,255,0.09);--border2:rgba(255,255,255,0.16);
+    --text:#ffffff;--text2:#d4d4d8;--text3:#9ca3af;
+    --green:#4cc38a;--green-bg:#0d2b1d;--green-br:rgba(76,195,138,0.22);
+    --amber:#fbbf24;--amber-bg:#1c1500;--amber-br:rgba(251,191,36,0.2);
+    --red:#CE1126;--red-bg:#2e1213;--blue:#6badea;--blue-bg:#0c2340;--isu-light:#2e1213;
+  }
+}
+
+html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
+body {
+  font-family: 'Fira Code', 'Fira Mono', monospace; background: var(--bg3);
+  display: flex; align-items: center; justify-content: center; padding: 1rem; box-sizing: border-box;
+}
+#app {
+  width: 100%; max-width: 550px; height: 95vh; background: var(--bg);
+  border-radius: var(--r-lg); border: 0.5px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* --- SMOOTH PAGE TRANSITIONS --- */
+@keyframes pageEnter {
+  0% { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+#app > * {
+  opacity: 0;
+  animation: pageEnter 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.isu-header{background:var(--isu);color:#fff;padding:0 1rem;height:var(--header-h);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.isu-header-title{font-size:16px;font-weight:600;}
+.isu-header-sub{font-size:10px;opacity:0.8;margin-top:2px;}
+.isu-back-btn{background:rgba(255,255,255,0.18);border:none;color:#fff;border-radius:var(--r-sm);padding:5px 10px;font-size:12px;font-family:'Fira Code',monospace;cursor:pointer;}
+.isu-timer{font-size:26px;font-weight:600;font-family:'Fira Code',monospace;color:#fff;}
+.isu-timer.urgent{color:#FFD0D0;animation:upulse 1s ease-in-out infinite;}
+@keyframes upulse{0%,100%{opacity:1}50%{opacity:0.6}}
+.btn{display:block;width:100%;padding:0.75rem 1rem;font-size:14px;font-weight:600;text-align:center;border:1.5px solid var(--border2);border-radius:var(--r-md);background:var(--bg);color:var(--text);cursor:pointer;font-family:'Fira Code',monospace;transition:opacity 0.12s;}
+.btn:active{opacity:0.8;}
+.btn.primary{background:var(--isu);color:#fff;border-color:transparent;}
+.btn.secondary{background:var(--bg2);color:var(--text2);border-color:var(--border);font-size:13px;}
+.btn.danger{background:transparent;color:var(--amber);border-color:var(--amber-br);font-size:13px;}
+.btn.sm{padding:0.4rem 0.85rem;font-size:12px;width:auto;border-radius:var(--r-sm);}
+.btn.green{background:var(--green);color:#fff;border-color:transparent;}
+.btn.amber-btn{background:var(--amber);color:#fff;border-color:transparent;}
+.login-wrap{padding:2.5rem 1.25rem 1.5rem;display:flex;flex-direction:column;gap:0.85rem;}
+.login-logo{display:flex;flex-direction:column;align-items:center;margin-bottom:1rem;gap:8px;}
+.input-group{display:flex;flex-direction:column;gap:5px;}
+.input-label{font-size:11px;color:var(--text2);letter-spacing:0.05em;text-transform:uppercase;font-weight:500;}
+.input-field{padding:0.7rem 0.9rem;font-size:14px;color:var(--text);background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r-md);outline:none;width:100%;font-family:'Fira Code',monospace;}
+.input-field:focus{border-color:var(--isu);}
+.input-select{padding:0.7rem 0.9rem;font-size:14px;color:var(--text);background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r-md);outline:none;width:100%;font-family:'Fira Code',monospace;appearance:none;-webkit-appearance:none;}
+.input-select:focus{border-color:var(--isu);}
+.password-wrap { position: relative; }
+.password-wrap .input-field { padding-right: 2.8rem; }
+.eye-btn {
+  position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--text3);
+  padding: 4px; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; line-height: 1;
+}
+.eye-btn:active { color: var(--isu); }
+.login-error{font-size:12px;color:var(--isu);background:var(--isu-light);border:1px solid rgba(206,17,38,0.2);border-radius:var(--r-md);padding:0.55rem 0.85rem;display:none;}
+.login-error.show{display:block;}
+.section-label{font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);font-weight:600;padding:0.65rem 1rem 0.35rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;justify-content:space-between;}
+.class-card{margin:0.85rem;padding:1rem 1.1rem;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-lg);cursor:pointer;transition:border-color 0.15s;}
+.class-card:active{border-color:var(--isu);}
+.class-card:hover{border-color:var(--isu);}
+.class-card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;}
+.class-code{font-size:13px;font-weight:600;color:var(--isu);}
+.class-section-badge{font-size:10px;background:var(--isu-light);color:var(--isu);border-radius:20px;padding:2px 8px;font-weight:600;}
+.class-name{font-size:12px;font-weight:500;color:var(--text);margin-bottom:4px;line-height:1.4;}
+.class-meta{font-size:11px;color:var(--text3);}
+.class-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border);}
+.class-enrolled{font-size:11px;color:var(--text2);}
+.class-view-btn{font-size:11px;font-weight:600;color:var(--isu);background:none;border:none;cursor:pointer;font-family:'Fira Code',monospace;}
+.add-class-btn{margin:0 0.85rem 0.85rem;display:block;width:calc(100% - 1.7rem);padding:0.75rem;font-size:13px;font-weight:600;text-align:center;border:1.5px dashed var(--border2);border-radius:var(--r-lg);background:transparent;color:var(--text2);cursor:pointer;font-family:'Fira Code',monospace;}
+.add-class-btn:active{background:var(--bg2);}
+.stat-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:1rem;}
+.stat-card{background:var(--bg2);border-radius:var(--r-md);padding:0.75rem 0.5rem;text-align:center;border:0.5px solid var(--border);}
+.stat-num{font-size:28px;font-weight:600;font-family:'Fira Code',monospace;}
+.stat-lbl{font-size:10px;color:var(--text3);letter-spacing:0.06em;text-transform:uppercase;margin-top:3px;}
+.stat-num.green{color:var(--green);}.stat-num.amber{color:var(--amber);}.stat-num.gray{color:var(--text3);}.stat-num.red{color:var(--red);}
+.student-row{display:flex;align-items:center;justify-content:space-between;padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);transition:background 0.15s;}
+.student-row:last-child{border-bottom:none;}
+.student-row.tappable{cursor:pointer;}
+.student-row.tappable:active{background:var(--bg2);}
+.avatar{width:32px;height:32px;border-radius:50%;background:#000;color:#fff;font-size:11px;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.avatar.present{background:var(--green-bg);color:var(--green);}
+.avatar.late{background:var(--amber-bg);color:var(--amber);}
+.student-info{flex:1;margin:0 10px;}
+.student-name{font-size:13px;font-weight:500;color:var(--text);}
+.student-id{font-size:10px;color:var(--text3);font-family:'Fira Code',monospace;margin-top:1px;}
+.status-pill{font-size:10px;font-weight:600;letter-spacing:0.04em;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+.status-pill.present{background:var(--green-bg);color:var(--green);border:0.5px solid var(--green-br);}
+.status-pill.late{background:var(--amber-bg);color:var(--amber);border:0.5px solid var(--amber-br);}
+.status-pill.absent{background:var(--bg2);color:var(--text3);border:0.5px solid var(--border);}
+.status-pill.override{background:var(--blue-bg);color:var(--blue);border:0.5px solid rgba(21,101,192,0.2);}
+#camera-wrap {
+  position: relative;
+  height: var(--scan-h);
+  background: #0a0a0a;
+  overflow: hidden;
+  flex-shrink: 0; 
+}
+#camera-wrap video,#camera-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}
+#camera-wrap canvas{display:none;}
+.reticle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:240px;height:68px;pointer-events:none;}
+.reticle::before,.reticle::after,.reticle-inner::before,.reticle-inner::after{content:'';position:absolute;width:20px;height:20px;border-color:#fff;border-style:solid;}
+.reticle::before{top:0;left:0;border-width:2px 0 0 2px;}
+.reticle::after{top:0;right:0;border-width:2px 2px 0 0;}
+.reticle-inner::before{bottom:0;left:0;border-width:0 0 2px 2px;}
+.reticle-inner::after{bottom:0;right:0;border-width:0 2px 2px 0;}
+.scanline{position:absolute;left:12px;right:12px;height:2px;background:var(--isu);opacity:0.8;animation:scanline 2s linear infinite;}
+@keyframes scanline{0%{top:8px}100%{top:calc(100% - 8px)}}
+.camera-hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:11px;color:rgba(255,255,255,0.5);}
+.privacy-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.88);gap:8px;animation:fadeOut 0.4s ease 2.2s forwards;pointer-events:none;}
+.privacy-overlay .p-icon{font-size:44px;}
+.privacy-overlay .p-name{font-size:20px;font-weight:600;color:#fff;font-family:'Fira Code',monospace;}
+.privacy-overlay .p-sub{font-size:12px;color:rgba(255,255,255,0.5);}
+@keyframes fadeOut{to{opacity:0}}
+.tab-bar{display:flex;border-bottom:1.5px solid var(--border);background:var(--bg);}
+.tab-btn{flex:1;padding:0.6rem;font-size:12px;font-weight:600;font-family:'Fira Code',monospace;background:none;border:none;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1.5px;transition:color 0.15s,border-color 0.15s;}
+.tab-btn.active{color:var(--isu);border-bottom-color:var(--isu);}
+.sheet-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:flex-end;justify-content:center;z-index:100;}
+.sheet{background:var(--bg);border-radius:var(--r-lg) var(--r-lg) 0 0;padding:1.25rem 1.25rem 2rem;width:100%;max-width:390px;animation:slideUp 0.25s ease;}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.sheet-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 1rem;}
+.sheet-name{font-size:16px;font-weight:600;color:var(--text);text-align:center;margin-bottom:4px;}
+.sheet-sub{font-size:11px;color:var(--text3);text-align:center;margin-bottom:1.25rem;}
+.sheet-btns{display:flex;flex-direction:column;gap:0.6rem;}
+.sheet-cancel{font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;text-align:center;padding:0.5rem;font-family:'Fira Code',monospace;width:100%;margin-top:0.25rem;}
+.duration-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:0.75rem 0;}
+.dur-btn{padding:0.6rem 0;font-size:13px;font-weight:600;text-align:center;border:1.5px solid var(--border);border-radius:var(--r-md);background:var(--bg2);color:var(--text2);cursor:pointer;font-family:'Fira Code',monospace;}
+.dur-btn.selected{border-color:var(--isu);background:var(--isu-light);color:var(--isu);}
+.toast{padding:0.6rem 1rem;font-size:12px;font-weight:500;min-height:36px;display:flex;align-items:center;gap:6px;border-bottom:0.5px solid var(--border);}
+.toast.ok{background:var(--green-bg);color:var(--green);}
+.toast.late{background:var(--amber-bg);color:var(--amber);}
+.toast.empty{background:var(--bg2);color:var(--text3);font-weight:400;}
+.blind-bar{padding:0.8rem 1rem;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid var(--border);background:var(--bg2);}
+.blind-count{font-size:22px;font-weight:600;color:var(--green);font-family:'Fira Code',monospace;}
+.blind-label{font-size:11px;color:var(--text3);}
+.live-badge{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#fff;}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#fff;animation:pulse 1.4s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+
+/* ── Bottom navigation bar ────────────────────────────────── */
+.bottom-nav{
+  display:flex;align-items:center;justify-content:space-around;
+  height:64px;background:var(--bg);
+  border-top:0.5px solid var(--border);
+  flex-shrink:0;
+  position:sticky;bottom:0;
+  width: 100%;
+}
+.nav-item{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:none;border:none;cursor:pointer;
+  font-family:'Fira Code',monospace;font-size:10px;
+  color:var(--text3);padding:8px 16px;
+  transition:color 0.15s;
+  -webkit-tap-highlight-color:transparent;
+  flex:1;
+}
+.nav-item.active{color:var(--isu);}
+.nav-icon{font-size:20px;line-height:1;}
+.nav-dot{
+  width:5px;height:5px;border-radius:50%;background:var(--isu);
+  position:absolute;top:-2px;right:-2px;
+}
+.nav-icon-wrap{position:relative;display:inline-flex;}
+
+/* ── Academic history card ───────────────────── */
+.hist-card{
+  background:var(--bg);border-radius:16px;
+  padding:1.1rem 1.1rem 0.9rem;
+  margin:0 0.85rem 0.85rem;
+  box-shadow:0 8px 32px rgba(26,28,28,0.08);
+}
+.hist-card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.9rem;}
+.hist-date{font-family:'Fira Code',monospace;font-size:17px;font-weight:700;color:var(--text);letter-spacing:-0.02em;}
+.hist-dow{font-size:11px;color:var(--text3);margin-top:2px;}
+.hist-present-badge{
+  display:flex;align-items:center;gap:5px;
+  background:var(--isu-light);color:var(--isu);
+  font-size:11px;font-weight:600;border-radius:20px;
+  padding:4px 10px;white-space:nowrap;
+}
+.hist-present-dot{width:6px;height:6px;border-radius:50%;background:var(--isu);flex-shrink:0;}
+.hist-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;}
+.hist-stat-box{background:var(--bg2);border-radius:10px;padding:0.6rem 0.5rem;text-align:center;}
+.hist-stat-lbl{font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:3px;}
+.hist-stat-num{font-size:20px;font-weight:700;font-family:'Fira Code',monospace;}
+.hist-stat-num.red{color:var(--red);}
+.hist-stat-num.amber{color:var(--amber);}
+.hist-stat-num.muted{color:var(--text3);}
+
+/* ── Session detail panel ─────────────────────────────────── */
+.detail-panel{
+  background:var(--bg);border-radius:16px;
+  margin:0 0.85rem 1rem;
+  box-shadow:0 8px 32px rgba(26,28,28,0.08);
+  overflow:hidden;
+}
+.detail-panel-header{padding:1rem 1.1rem 0.75rem;}
+.detail-panel-label{font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--isu);font-weight:700;margin-bottom:4px;}
+.detail-panel-date{font-family:'Fira Code',monospace;font-size:18px;font-weight:700;color:var(--text);letter-spacing:-0.01em;}
+.detail-panel-sub{font-size:12px;color:var(--text3);margin-top:2px;}
+.detail-group-label{
+  display:flex;align-items:center;gap:8px;
+  padding:0.6rem 1.1rem;
+  font-size:13px;font-weight:600;color:var(--isu);
+  border-top:0.5px solid var(--border);
+}
+.detail-student-row{
+  display:flex;align-items:center;gap:10px;
+  padding:0.65rem 1.1rem;
+  border-top:0.5px solid var(--border);
+}
+.detail-avatar{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--bg2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:var(--text2);
+  flex-shrink:0;
+}
+.detail-student-name{font-size:13px;font-weight:500;color:var(--text);}
+.detail-student-id{font-size:10px;color:var(--text3);font-family:'Fira Code',monospace;}
+.detail-mail-btn{margin-left:auto;background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:4px;}
+.detail-edit-btn{
+  display:block;width:calc(100% - 1.7rem);margin:0 0.85rem 1rem;
+  padding:0.85rem;text-align:center;font-size:14px;font-weight:600;
+  background:linear-gradient(135deg,#a30019,#ce1126);color:#fff;
+  border:none;border-radius:12px;cursor:pointer;font-family:'Fira Code',monospace;
+}
+.detail-edit-btn:active{opacity:0.85;}
+
+.summary-row{display:flex;align-items:center;justify-content:space-between;padding:0.65rem 1rem;border-bottom:0.5px solid var(--border);}
+.summary-row:last-child{border-bottom:none;}
+.empty-state{padding:2.5rem 1rem;text-align:center;color:var(--text3);font-size:12px;}
+.note-box{margin:1rem;padding:0.75rem 0.9rem;background:var(--bg2);border-radius:var(--r-md);border:0.5px solid var(--border);font-size:11px;color:var(--text2);line-height:1.6;}
+.footer-pad{padding:1rem;display:flex;flex-direction:column;gap:0.6rem;}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border2);border-top-color:var(--isu);border-radius:50%;animation:spin 0.7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.cam-error{display:flex;flex-direction:column;align-items:center;justify-content:center;height:var(--scan-h);background:#0a0a0a;gap:6px;}
+.cam-error p{font-size:12px;color:rgba(255,255,255,0.45);text-align:center;padding:0 1.5rem;}
+.typing-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.typing-line{font-family:'Fira Code',monospace;font-size:34px;font-weight:600;color:var(--isu);overflow:hidden;white-space:nowrap;width:0;border-right:2.5px solid var(--isu);animation:typeIn 0.7s steps(5,end) 0.2s forwards,cursorBlink 0.8s step-end 0.9s 4,cursorFade 0.1s ease 3.5s forwards;}
+.typing-sub{font-family:'Fira Code',monospace;font-size:11px;color:var(--text3);overflow:hidden;white-space:nowrap;width:0;opacity:0;animation:typeInSub 0.6s steps(28,end) 1.2s forwards;}
+@keyframes typeIn{from{width:0}to{width:5ch}}
+@keyframes typeInSub{from{width:0;opacity:1}to{width:28ch;opacity:1}}
+@keyframes cursorBlink{0%,100%{border-color:var(--isu)}50%{border-color:transparent}}
+@keyframes cursorFade{to{border-color:transparent}}
+.backend-banner{margin:1rem;padding:0.75rem 0.9rem;background:var(--blue-bg);border-radius:var(--r-md);border:0.5px solid rgba(21,101,192,0.2);font-size:11px;color:var(--blue);line-height:1.6;}
+.days-grid{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+.day-btn{padding:4px 10px;font-size:11px;font-weight:600;border:1.5px solid var(--border2);border-radius:20px;background:var(--bg2);color:var(--text2);cursor:pointer;font-family:'Fira Code',monospace;}
+.day-btn.selected{border-color:var(--isu);background:var(--isu-light);color:var(--isu);}
+</style>
+
+<script>
+/* ─── CONFIG ─────────────────────────────────────────── */
+const FIREBASE_CONFIG = {
+  apiKey:"AIzaSyBVFXnOnK9_uCfgLDRrgRfykHVSvcJ0Fe8",
+  authDomain:"mobiletracking-a53ac.firebaseapp.com",
+  projectId:"mobiletracking-a53ac",
+  storageBucket:"mobiletracking-a53ac.firebasestorage.app",
+  messagingSenderId:"235704110221",
+  appId:"1:235704110221:web:2b79cc60e34ee315dc66c4"
+};
+
+const FUNCTIONS_URL = 'https://us-central1-mobiletracking-a53ac.cloudfunctions.net';
+const PROFESSOR_PASSWORD = 'Redbirds2026';
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const db = firebase.firestore();
+
+/* ─── Audio feedback ─────────────────────────────────────── */
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playSound(type) {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc      = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    if (type === 'success') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.08);
+      gainNode.gain.setValueAtTime(0.12, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.start(); osc.stop(ctx.currentTime + 0.25);
+    } else if (type === 'error') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(160, ctx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.start(); osc.stop(ctx.currentTime + 0.35);
+    }
+  } catch(e) { }
+}
+
+/* ─── State ─────────────────────────────────────────────── */
+let STUDENTS       = [];
+let CLASSES        = [];
+let activeClass    = null;
+let phase          = 'login';
+let currentUser    = null;
+let remaining      = 360;
+let sessionSecs    = 360;
+let tardyThresholdSecs = 300;
+let attendance     = {};
+let timerID        = null;
+let sessionDocID   = null;
+let lastToastTO    = null;
+let cameraRunning  = false;
+let historyData    = [];
+let reportData     = [];
+let reportLoading  = false;
+let selectedSession = null;
+let birdInterval   = null;
+let scanMode       = 'camera';
+let sheetStudent   = null;
+let overrideTarget = null;
+let selectedDays   = [];
+let newClassData   = {};
+
+let totalDashSessions = 0; 
+let avgDashRate = 0;       
+
+/* ─── Auth ───────────────────────────────────────────────── */
+async function login() {
+  const email=document.getElementById('email').value.trim();
+  const pass=document.getElementById('pass').value;
+  const errEl=document.getElementById('login-err');
+  const btn=document.getElementById('login-btn');
+  errEl.classList.remove('show');
+  btn.innerHTML='<span class="spinner"></span>';
+  btn.disabled=true;
+  await new Promise(r=>setTimeout(r,700));
+
+  const isIsuEmail = email.toLowerCase().endsWith('@ilstu.edu');
+
+  if(isIsuEmail && pass === PROFESSOR_PASSWORD){
+    currentUser={email}; phase='class'; fetchClasses();
+  } else if (!isIsuEmail) {
+    errEl.textContent='Access restricted. Please use an @ilstu.edu email.';
+    errEl.classList.add('show');
+    btn.innerHTML='Sign In'; btn.disabled=false;
+  } else {
+    errEl.textContent='Incorrect password.';
+    errEl.classList.add('show');
+    btn.innerHTML='Sign In'; btn.disabled=false;
+  }
+}
+
+function togglePass(){
+  const input=document.getElementById('pass');
+  const btn=document.getElementById('eye-btn');
+  if(!input||!btn) return;
+  if(input.type==='password'){
+    input.type='text';
+    btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+    btn.setAttribute('aria-label','Hide password');
+  } else {
+    input.type='password';
+    btn.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+    btn.setAttribute('aria-label','Show password');
+  }
+}
+
+function logout(){
+  stopCamera(); clearInterval(timerID); clearInterval(birdInterval);
+  currentUser=null; activeClass=null; CLASSES=[]; phase='login'; render(); setTimeout(initBird,0);
+}
+
+/* ─── Classes ────────────────────────────────────────────── */
+async function fetchClasses(){
+  try {
+    const snap = await db.collection('classes').where('professor','==',currentUser.email).get();
+    CLASSES = snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(CLASSES.length===0){
+      const ref = await db.collection('classes').add({
+        code:'IT 391', section:'002',
+        name:'Directed Project in Information Technology',
+        type:'Online', days:[], meetingTime:'',
+        capacity:5, professor:currentUser.email,
+        createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+      CLASSES=[{id:ref.id,code:'IT 391',section:'002',name:'Directed Project in Information Technology',type:'Online',days:[],meetingTime:'',capacity:5,professor:currentUser.email}];
+    }
+    render();
+  } catch(e){ console.warn('[Firebase] fetchClasses:',e.message); render(); }
+}
+
+async function fetchStudentsForClass(classId, skipRender = false){
+  try {
+    const snap = await db.collection('classes').doc(classId).collection('students').get();
+    STUDENTS = snap.docs.map(d=>({id:d.id,name:d.data().name,barcode:d.id}));
+    if(STUDENTS.length===0){
+      const snap2 = await db.collection('Students').get();
+      STUDENTS = snap2.docs.map(d=>({id:d.id,name:d.data().name,barcode:d.id}));
+    }
+    if(STUDENTS.length===0){
+      STUDENTS=[
+        {id:'A804389465C',name:'Member 1',barcode:'A804389465C'},
+        {id:'A804060073C',name:'Member 2',barcode:'A804060073C'},
+        {id:'STU-100003', name:'Member 3',barcode:'STU-100003'},
+        {id:'STU-100004', name:'Member 4',barcode:'STU-100004'},
+        {id:'STU-100005', name:'Member 5',barcode:'STU-100005'},
+      ];
+    }
+    if (!skipRender) render();
+  } catch(e){ if (!skipRender) render(); }
+}
+
+/* ─── Dashboard Stats ─────────────────────── */
+async function openDashboard(classId) {
+  activeClass = CLASSES.find(c => c.id === classId);
+  totalDashSessions = 0; 
+  avgDashRate = 0;       
+  await fetchStudentsForClass(classId, true); 
+  await fetchDashboardStats(classId, true);   
+  phase = 'dashboard';
+  render(); 
+}
+
+async function fetchDashboardStats(classId, skipRender = false) {
+  try {
+    const snap = await db.collection('sessions').where('classId','==',classId).get();
+    totalDashSessions = snap.size;
+    if (totalDashSessions > 0 && STUDENTS.length > 0) {
+      let totalCheckins = 0;
+      snap.docs.forEach(doc => {
+        const att = doc.data().attendance || {};
+        totalCheckins += Object.keys(att).length; 
+      });
+      const totalPossible = totalDashSessions * STUDENTS.length;
+      avgDashRate = Math.round((totalCheckins / totalPossible) * 100);
+    }
+    if (!skipRender) render(); 
+  } catch(e) { }
+}
+
+/* ─── Bottom Navigation Function ─────────────────────────── */
+const NAV_PHASES = ['dashboard','history','report'];
+ 
+function navTo(dest){
+  if(dest==='history') { showHistory(); return; }
+  if(dest==='report')  { showReport();  return; }
+  if(dest==='dashboard' && activeClass) { openDashboard(activeClass.id); return; } 
+  phase=dest; render();
+}
+ 
+function bottomNav(){
+  if(!NAV_PHASES.includes(phase)) return '';
+  const tabs=[
+    {
+      id:'class', label:'Home', 
+      icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>'
+    },
+    {
+      id:'dashboard', label:'Attendance', 
+      icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'
+    },
+    {
+      id:'history', label:'History', 
+      icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>', 
+      dot: historyData.length>0
+    },
+    {
+      id:'report', label:'Reports', 
+      icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>'
+    },
+  ];
+  return `<nav class="bottom-nav">
+    ${tabs.map(t=>`
+      <button class="nav-item${phase===t.id?' active':''}" onclick="${t.id==='class'?'phase=\'class\';render()':'navTo(\''+t.id+'\')'}">
+        <span class="nav-icon-wrap"><span class="nav-icon" style="display:flex; margin-bottom: 2px;">${t.icon}</span>${t.dot?'<span class="nav-dot"></span>':''}</span>
+        <span>${t.label}</span>
+      </button>`).join('')}
+  </nav>`;
+}
+
+/* ─── Edit / Delete Class Logic ──────────────────────────── */
+function openClassEditSheet(event, classId, classCode) {
+  event.stopPropagation();
+  if (classCode.trim().toUpperCase().includes('IT 391')) {
+    alert("IT 391 is the required baseline class and cannot be edited or deleted.");
+    return;
+  }
+  const old = document.getElementById('mark-sheet');
+  if(old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'mark-sheet'; el.className = 'sheet-overlay';
+  el.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-name">${classCode}</div>
+      <div class="sheet-sub">Edit Class Options</div>
+      <div class="sheet-btns">
+        <button class="btn" style="border-color: var(--red); color: var(--red); background: var(--red-bg);" onclick="confirmDeleteClass('${classId}', '${classCode}')">
+          Delete Class
+        </button>
+      </div>
+      <button class="sheet-cancel" onclick="closeSheet()">Cancel</button>
+    </div>`;
+  el.addEventListener('click', e => { if(e.target===el) closeSheet(); });
+  document.body.appendChild(el);
+}
+
+async function confirmDeleteClass(classId, classCode) {
+  closeSheet();
+  if (confirm(`Are you sure you want to completely remove ${classCode}?\nThis will permanently delete it from your dashboard.`)) {
+    try {
+      await db.collection('classes').doc(classId).delete();
+      CLASSES = CLASSES.filter(c => c.id !== classId);
+      render();
+    } catch(err) { alert("Failed to delete class."); }
+  }
+}
+
+/* ─── Add Class ──────────────────────────────────────────── */
+async function saveNewClass(){
+  const code    = document.getElementById('nc-code').value.trim();
+  const section = document.getElementById('nc-section').value.trim();
+  const name    = document.getElementById('nc-name').value.trim();
+  const type    = document.getElementById('nc-type').value;
+  const sched   = document.getElementById('nc-schedule').value;
+  const cap     = parseInt(document.getElementById('nc-cap').value)||30;
+  const errEl   = document.getElementById('nc-err');
+
+  if(!code||!section||!name||!sched){
+    errEl.textContent='Code, section, name, and schedule are required.';
+    errEl.classList.add('show'); return;
+  }
+
+  const parts = sched.split('|');
+  const classDays = parts[0] === 'Online' ? [] : parts[0].split(',');
+  const classTime = parts[1];
+
+  errEl.classList.remove('show');
+  const saveBtn = document.getElementById('nc-save');
+  saveBtn.innerHTML='<span class="spinner"></span>'; saveBtn.disabled=true;
+
+  try {
+    const ref = await db.collection('classes').add({
+      code, section, name, type, days: classDays, meetingTime: classTime, capacity: cap,
+      professor: currentUser.email, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    CLASSES.push({id:ref.id,code,section,name,type,days:classDays,meetingTime:classTime,capacity:cap,professor:currentUser.email});
+    phase='class'; render();
+  } catch(e){
+    errEl.textContent='Failed to save. Try again.'; errEl.classList.add('show');
+    saveBtn.innerHTML='Save Class'; saveBtn.disabled=false;
+  }
+}
+
+/* ─── Session ────────────────────────────────────────────── */
+function goToSessionStart(){ phase='session-start'; sessionSecs=360; tardyThresholdSecs=300; render(); }
+
+async function startSession(){
+  attendance={}; remaining=sessionSecs; sessionDocID=null;
+  phase='scanning'; scanMode='camera';
+  try {
+    const ref = await db.collection('sessions').add({
+      date:      new Date().toLocaleDateString('en-CA'),
+      startedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      endedAt:   null, attendance:{},
+      professor: currentUser?currentUser.email:'unknown',
+      classId:   activeClass?activeClass.id:'',
+      class:     activeClass?(activeClass.code+' '+activeClass.section):'',
+      sessionSecs,
+    });
+    sessionDocID=ref.id;
+  } catch(e){ }
+  render();
+  clearInterval(timerID);
+  timerID=setInterval(()=>{
+    remaining--;
+    if(remaining<=0){clearInterval(timerID);endSession();}
+    else updateTimer();
+  },1000);
+  requestAnimationFrame(()=>startCamera());
+}
+
+async function recordScan(barcodeValue){
+  const student=STUDENTS.find(s=>s.barcode.trim().toLowerCase()===barcodeValue.trim().toLowerCase());
+  if(!student){ playSound('error'); showToast('Unknown ID: '+barcodeValue,'empty'); return; }
+  if(attendance[student.id]){ playSound('error'); showToast('Already scanned: '+student.name,'empty'); return; }
+
+  const elapsed = sessionSecs - remaining;
+  const isLate = elapsed >= tardyThresholdSecs; 
+  const scannedAt=new Date();
+  
+  attendance[student.id]={name:student.name,scannedAt,late:isLate,override:false};
+  playSound('success');
+  showPrivacyOverlay(student.name,isLate);
+  showToast(isLate?student.name+' — marked tardy':student.name+' checked in',isLate?'late':'ok');
+  updateCountBadge();
+  try {
+    await db.collection('sessions').doc(sessionDocID).update({
+      ['attendance.'+student.id]:{name:student.name,scannedAt:firebase.firestore.Timestamp.fromDate(scannedAt),late:isLate,override:false}
+    });
+  } catch(e){ }
+}
+
+async function markStudent(studentId,asLate){
+  closeSheet();
+  const s=STUDENTS.find(s=>s.id===studentId);
+  if(!s) return;
+  const scannedAt=new Date();
+  attendance[studentId]={name:s.name,scannedAt,late:asLate,override:true};
+  showToast(asLate?s.name+' — marked tardy':s.name+' marked present',asLate?'late':'ok');
+  updateCountBadge(); updateManualRoster();
+  try {
+    await db.collection('sessions').doc(sessionDocID).update({
+      ['attendance.'+studentId]:{name:s.name,scannedAt:firebase.firestore.Timestamp.fromDate(scannedAt),late:asLate,override:true}
+    });
+  } catch(e){ }
+}
+
+async function overrideMarkPresent(studentId){
+  const s=STUDENTS.find(s=>s.id===studentId);
+  if(!s) return;
+  attendance[studentId]={name:s.name,scannedAt:new Date(),late:false,override:true};
+  overrideTarget=null; renderSummaryRows();
+  try { await db.collection('sessions').doc(sessionDocID).update({['attendance.'+studentId]:{name:s.name,scannedAt:firebase.firestore.Timestamp.fromDate(attendance[studentId].scannedAt),late:false,override:true}}); } catch(e){}
+}
+
+async function overrideMarkTardy(studentId){
+  const s=STUDENTS.find(s=>s.id===studentId);
+  if(!s) return;
+  attendance[studentId]={name:s.name,scannedAt:new Date(),late:true,override:true};
+  overrideTarget=null; renderSummaryRows();
+  try { await db.collection('sessions').doc(sessionDocID).update({['attendance.'+studentId]:{name:s.name,scannedAt:firebase.firestore.Timestamp.fromDate(attendance[studentId].scannedAt),late:true,override:true}}); } catch(e){}
+}
+
+async function overrideMarkAbsent(studentId){
+  delete attendance[studentId]; overrideTarget=null; renderSummaryRows();
+  try { await db.collection('sessions').doc(sessionDocID).update({['attendance.'+studentId]:firebase.firestore.FieldValue.delete()}); } catch(e){}
+}
+
+function toggleOverride(studentId){
+  overrideTarget=(overrideTarget===studentId?null:studentId); renderSummaryRows();
+}
+
+async function endSession(){
+  stopCamera(); phase='summary';
+  try { await db.collection('sessions').doc(sessionDocID).update({endedAt:firebase.firestore.FieldValue.serverTimestamp()}); } catch(e){}
+  render();
+}
+
+function resetApp(){
+  attendance={}; remaining=360; sessionDocID=null; overrideTarget=null; 
+  if(activeClass) openDashboard(activeClass.id);
+}
+
+async function showHistory(){
+  historyData=[]; 
+  try {
+    let snap;
+    if(activeClass){
+      snap = await db.collection('sessions').where('classId','==',activeClass.id).limit(20).get();
+      historyData = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+          const ta = a.startedAt ? a.startedAt.toMillis() : 0;
+          const tb = b.startedAt ? b.startedAt.toMillis() : 0;
+          return tb - ta;
+        }).slice(0,10);
+    } else {
+      snap = await db.collection('sessions').orderBy('startedAt','desc').limit(10).get();
+      historyData = snap.docs.map(d=>({id:d.id,...d.data()}));
+    }
+  } catch(e){ historyData = []; }
+  phase='history'; 
+  render();
+}
+
+async function showReport(){
+  reportData=[]; 
+  try {
+    const res = await fetch(`${FUNCTIONS_URL}/semesterReport?classId=${activeClass?activeClass.id:''}&professor=${encodeURIComponent(currentUser.email)}`,{method:'GET'});
+    if(res.ok){
+      const data = await res.json();
+      reportData = data.report;
+      phase='report'; render(); return;
+    }
+  } catch(e){ }
+
+  try {
+    let q = db.collection('sessions');
+    if(activeClass) q=q.where('classId','==',activeClass.id);
+    const snap = await q.get();
+    const sessions = snap.docs.map(d=>d.data());
+    const total=sessions.length;
+    reportData=STUDENTS.map(s=>{
+      let present=0,late=0;
+      sessions.forEach(sess=>{const r=(sess.attendance||{})[s.id];if(r){r.late?late++:present++;}});
+      return{name:s.name,present,late,absent:total-present-late,rate:total>0?Math.round(((present+late)/total)*100):0,total};
+    });
+  } catch(e){ }
+  phase='report'; 
+  render();
+}
+
+/* ─── Camera ─────────────────────────────────────────────── */
+function startCamera(){
+  if(cameraRunning) return;
+  const wrap=document.getElementById('camera-wrap');
+  if(!wrap) return;
+
+  Quagga.init({
+    inputStream: { 
+      type: 'LiveStream', 
+      target: wrap, 
+      constraints: { 
+        facingMode: 'environment',
+        width: { ideal: 640 },
+        height: { ideal: 480 } 
+      } 
+    },
+    decoder: { 
+      // Restored full reader list to ensure it catches all ID types
+      readers: ['code_128_reader', 'code_39_reader', 'code_93_reader', 'ean_reader', 'upc_reader', 'i2of5_reader', 'codabar_reader'] 
+    },
+    locate: true
+  }, err => {
+    if(err){
+      wrap.innerHTML='<div class="cam-error"><p>Camera access denied.</p></div>';
+      return;
+    }
+    Quagga.start(); 
+    cameraRunning=true;
+  });
+
+  let lastVal=null, lastTime=0;
+  Quagga.onDetected(result=>{
+    const val=result.codeResult.code, now=Date.now();
+    if(val===lastVal && now-lastTime<1500) return;
+    lastVal=val; lastTime=now; 
+    recordScan(val);
+  });
+}
+
+function stopCamera(){
+  if(!cameraRunning)return;
+  try{Quagga.stop();}catch(e){}
+  cameraRunning=false;
+}
+
+/* ─── Sheet ───────────────────────────────────────────────── */
+function openSheet(studentId){
+  if(attendance[studentId])return;
+  sheetStudent=STUDENTS.find(s=>s.id===studentId);
+  if(!sheetStudent)return;
+  const old=document.getElementById('mark-sheet');
+  if(old)old.remove();
+  const el=document.createElement('div');
+  el.id='mark-sheet';el.className='sheet-overlay';
+  el.innerHTML=`<div class="sheet"><div class="sheet-handle"></div><div class="sheet-name">${sheetStudent.name}</div><div class="sheet-sub">Select attendance status</div><div class="sheet-btns"><button class="btn green" onclick="markStudent('${studentId}',false)">&#10003; Mark Present</button><button class="btn amber-btn" onclick="markStudent('${studentId}',true)">&#9203; Mark Tardy</button></div><button class="sheet-cancel" onclick="closeSheet()">Cancel</button></div>`;
+  el.addEventListener('click',e=>{if(e.target===el)closeSheet();});
+  document.body.appendChild(el);
+}
+
+function closeSheet(){
+  const el=document.getElementById('mark-sheet');
+  if(el)el.remove();sheetStudent=null;
+}
+
+/* ─── Helpers ─────────────────────────────────────────────── */
+function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+function fmtTime(d){if(!d)return'';const date=d instanceof Date?d:(d.toDate?d.toDate():new Date(d));return date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+function fmtMins(s){return s>=60?Math.round(s/60)+' min':s+'s';}
+function presentCount(){return Object.values(attendance).filter(a=>!a.late).length;}
+function lateCount(){return Object.values(attendance).filter(a=>a.late).length;}
+function totalIn(){return Object.keys(attendance).length;}
+function absentCount(){return STUDENTS.length-totalIn();}
+
+function updateTimer(){
+  const el=document.getElementById('timer');
+  if(el){el.textContent=fmt(remaining);el.className='isu-timer'+(remaining<=60?' urgent':'');}
+}
+
+function updateCountBadge(){
+  const c=document.getElementById('scan-count');if(c)c.textContent=totalIn()+' / '+STUDENTS.length;
+  const b=document.getElementById('blind-count');if(b)b.textContent=totalIn();
+}
+
+function showToast(msg,type='ok'){
+  const el=document.getElementById('scan-toast');if(!el)return;
+  el.className='toast '+type;
+  el.innerHTML=type==='ok'?'&#10003; '+msg:type==='late'?'&#9203; '+msg:msg;
+  clearTimeout(lastToastTO);
+  lastToastTO=setTimeout(()=>{const e2=document.getElementById('scan-toast');if(e2){e2.className='toast empty';e2.textContent='Hold barcode to scan';}},2500);
+}
+
+function showPrivacyOverlay(name,isLate){
+  const wrap=document.getElementById('camera-wrap');if(!wrap)return;
+  const old=wrap.querySelector('.privacy-overlay');if(old)old.remove();
+  const el=document.createElement('div');el.className='privacy-overlay';
+  el.innerHTML=`<div class="p-icon">${isLate?'&#9203;':'&#10003;'}</div><div class="p-name">${name}</div><div class="p-sub">${isLate?'Marked tardy':'Checked in'}</div>`;
+  wrap.appendChild(el);setTimeout(()=>el.remove(),2800);
+}
+
+function setDuration(secs){
+  sessionSecs=secs;
+  document.querySelectorAll('.dur-btn:not(.tardy-btn)').forEach(b=>b.classList.toggle('selected',parseInt(b.dataset.secs)===secs));
+  updateDurNote();
+}
+
+function setTardyThreshold(secs){
+  tardyThresholdSecs=secs;
+  document.querySelectorAll('.tardy-btn').forEach(b=>b.classList.toggle('selected',parseInt(b.dataset.secs)===secs));
+  updateDurNote();
+}
+
+function updateDurNote(){
+  const n=document.getElementById('dur-note');
+  if(n) n.innerHTML=`Session open for <strong>${fmtMins(sessionSecs)}</strong>.<br>Students scanning after <strong>${tardyThresholdSecs === 99999 ? 'Never' : fmtMins(tardyThresholdSecs)}</strong> are marked tardy.`;
+}
+
+function switchScanMode(mode){
+  scanMode=mode;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+  const cw=document.getElementById('camera-wrap');
+  const mw=document.getElementById('manual-wrap');
+  if(cw)cw.style.display=mode==='camera'?'block':'none';
+  if(mw)mw.style.display=mode==='manual'?'block':'none';
+  if(mode==='camera')requestAnimationFrame(()=>startCamera());
+  else{stopCamera();updateManualRoster();}
+}
+
+function updateManualRoster(){
+  const c=document.getElementById('manual-list');
+  if(c)c.innerHTML=STUDENTS.map(s=>manualRowHTML(s)).join('');
+}
+
+function manualRowHTML(s){
+  const a=attendance[s.id],checkedIn=!!a,isLate=a&&a.late;
+  const pill=checkedIn?`<span class="status-pill ${isLate?'late':'present'}">${isLate?'Tardy':'Present'}</span>`:`<span class="status-pill absent">Absent</span>`;
+  return `<div class="student-row${checkedIn?'':' tappable'}" onclick="${checkedIn?'':'openSheet(\''+s.id+'\')'}"><div class="avatar${isLate?' late':checkedIn?' present':''}">${s.name.charAt(0)}</div><div class="student-info"><div class="student-name">${s.name}</div><div class="student-id">${s.barcode}</div></div>${pill}</div>`;
+}
+
+function renderSummaryRows(){
+  const c=document.getElementById('summary-roster');
+  if(c)c.innerHTML=STUDENTS.map(s=>summaryRowHTML(s)).join('');
+  const nums=document.querySelectorAll('.sum-num');
+  if(nums[0])nums[0].textContent=presentCount();
+  if(nums[1])nums[1].textContent=lateCount();
+  if(nums[2])nums[2].textContent=absentCount();
+}
+
+function summaryRowHTML(s){
+  const a=attendance[s.id];
+  const present=!!a&&!a.late,late=!!a&&a.late,absent=!a;
+  const color=present?'var(--green)':late?'var(--amber)':'var(--text2)';
+  const pillClass=present?'present':late?'late':'absent';
+  const pillText=present?(a.override?'Override':'Present'):late?(a.override?'Override':'Tardy'):'Absent';
+  const time=a?fmtTime(a.scannedAt):'';
+  let menuHTML='';
+  if(overrideTarget===s.id){
+    menuHTML=absent?`<div style="display:flex;gap:6px;margin-top:6px;" onclick="event.stopPropagation()"><button class="btn sm" onclick="overrideMarkPresent('${s.id}')" style="border-color:var(--green);color:var(--green);">Present</button><button class="btn sm" onclick="overrideMarkTardy('${s.id}')" style="border-color:var(--amber);color:var(--amber);">Tardy</button><button class="btn sm" onclick="toggleOverride('${s.id}')">Cancel</button></div>`
+    :`<div style="display:flex;gap:6px;margin-top:6px;" onclick="event.stopPropagation()"><button class="btn sm" onclick="overrideMarkAbsent('${s.id}')" style="border-color:var(--red);color:var(--red);">Mark Absent</button><button class="btn sm" onclick="toggleOverride('${s.id}')">Cancel</button></div>`;
+  }
+  return `<div class="summary-row tappable" onclick="toggleOverride('${s.id}')" style="background:${present?'var(--green-bg)':late?'var(--amber-bg)':''}">
+    <div style="display:flex;flex-direction:column;flex:1;">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="avatar ${present?'present':late?'late':''}">${s.name.charAt(0)}</div>
+          <div><div class="student-name" style="color:${color}">${s.name}</div><div class="student-id">${time?'Scanned '+time:'Tap to modify'}</div></div>
+        </div>
+        <span class="status-pill ${pillClass}${a&&a.override?' override':''}">${pillText}</span>
+      </div>${menuHTML}
+    </div>
+  </div>`;
+}
+
+/* ─── RENDER ──────────────────────────────────────────────── */
+function render(){
+  const app=document.getElementById('app');
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+
+  /* LOGIN */
+  if(phase==='login'){
+    app.innerHTML=`
+      <div class="isu-header" style="justify-content:center;">
+        <div style="text-align:center;"><div class="isu-header-title">FlyBy</div><div class="isu-header-sub">Illinois State University</div></div>
+      </div>
+      <div class="login-wrap" style="flex:1;">
+        <div class="login-logo">
+          <canvas id="redbird" width="80" height="80" style="image-rendering:pixelated;width:80px;height:80px;"></canvas>
+          <div class="typing-wrap"><div class="typing-line">FlyBy</div><div class="typing-sub">IT391 &middot; Professor sign-in</div></div>
+        </div>
+        <div class="input-group"><div class="input-label">Email</div><input id="email" class="input-field" type="email" placeholder="professor@ilstu.edu" autocomplete="email"></div>
+        <div class="input-group"><div class="input-label">Password</div><div class="password-wrap"><input id="pass" class="input-field" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password"><button class="eye-btn" type="button" onclick="togglePass()" id="eye-btn" aria-label="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button></div></div>
+        <div id="login-err" class="login-error"></div>
+        <button id="login-btn" class="btn primary" onclick="login()">Sign In</button>
+        <p style="font-size:11px;color:var(--text3);text-align:center;">Professor Portal &middot; Illinois State University</p>
+      </div>`;
+    setTimeout(initBird,0);
+    document.getElementById('pass').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+    return;
+  }
+
+  /* CLASS SELECTION */
+  if(phase==='class'){
+    app.innerHTML=`
+      <div class="isu-header">
+        <div><div class="isu-header-title">Your Classes</div><div class="isu-header-sub">${currentUser?currentUser.email:''}</div></div>
+        <button class="isu-back-btn" onclick="logout()">Sign Out</button>
+      </div>
+      <div style="padding:0.75rem 0.85rem 0;font-size:11px;color:var(--text3);">${today}</div>
+      <div style="flex:1; overflow-y:auto;">
+        ${CLASSES.length===0?'<div class="empty-state"><div class="spinner" style="margin:0 auto 8px"></div>Loading...</div>':CLASSES.map(cls=>`
+          <div class="class-card" onclick="openDashboard('${cls.id}')">
+            <div class="class-card-header">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div class="class-code">${cls.code}</div>
+                <div class="class-section-badge">Section ${cls.section}</div>
+              </div>
+              ${cls.code.includes('IT 391') ? '' : `
+                <button class="btn sm" style="background:transparent; border:none; padding:4px 8px; margin:-4px; color:var(--text3); font-size:10px; text-transform:uppercase;" onclick="openClassEditSheet(event, '${cls.id}', '${cls.code}')">Edit</button>`}
+            </div>
+            <div class="class-name">${cls.name}</div>
+            <div class="class-meta">${cls.type}${cls.days&&cls.days.length?' &middot; '+cls.days.join('/'):''}${cls.meetingTime?' &middot; '+cls.meetingTime:''}</div>
+            <div class="class-footer">
+              <div class="class-enrolled">${cls.capacity} students max</div>
+              <button class="class-view-btn">View &rsaquo;</button>
+            </div>
+          </div>`).join('')}
+        <button class="add-class-btn" onclick="selectedDays=[];phase='add-class';render()">+ Add New Class</button>
+      </div>`;
+    return;
+  }
+
+  /* ADD CLASS */
+  if(phase==='add-class'){
+    app.innerHTML=`
+      <div class="isu-header">
+        <div><div class="isu-header-title">Add New Class</div><div class="isu-header-sub">Enter class details</div></div>
+        <button class="isu-back-btn" onclick="phase='class';render()">Cancel</button>
+      </div>
+      <div style="padding:1rem;display:flex;flex-direction:column;gap:0.9rem; flex:1; overflow-y:auto;">
+        <div class="input-group">
+          <div class="input-label">Course Code</div>
+          <input id="nc-code" class="input-field" type="text" placeholder="e.g. IT 391">
+        </div>
+        <div class="input-group">
+          <div class="input-label">Section</div>
+          <input id="nc-section" class="input-field" type="text" placeholder="e.g. 002">
+        </div>
+        <div class="input-group">
+          <div class="input-label">Course Name</div>
+          <input id="nc-name" class="input-field" type="text" placeholder="e.g. Directed Project in IT">
+        </div>
+        <div class="input-group">
+          <div class="input-label">Format</div>
+          <select id="nc-type" class="input-select">
+            <option value="In-Person">In-Person</option>
+            <option value="Hybrid">Hybrid</option>
+            <option value="Online">Online</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <div class="input-label">Standard ISU Schedule</div>
+          <select id="nc-schedule" class="input-select">
+            <option value="" disabled selected>Select a time block</option>
+            <option value="Online|Asynchronous">Online / Asynchronous</option>
+            <optgroup label="M W F (50 min blocks)">
+              <option value="Mon,Wed,Fri|8:00 AM - 8:50 AM">M W F &bull; 8:00 AM - 8:50 AM</option>
+              <option value="Mon,Wed,Fri|9:00 AM - 9:50 AM">M W F &bull; 9:00 AM - 9:50 AM (Peak)</option>
+              <option value="Mon,Wed,Fri|10:00 AM - 10:50 AM">M W F &bull; 10:00 AM - 10:50 AM (Peak)</option>
+              <option value="Mon,Wed,Fri|11:00 AM - 11:50 AM">M W F &bull; 11:00 AM - 11:50 AM (Peak)</option>
+              <option value="Mon,Wed,Fri|Noon - 12:50 PM">M W F &bull; Noon - 12:50 PM (Peak)</option>
+              <option value="Mon,Wed,Fri|1:00 PM - 1:50 PM">M W F &bull; 1:00 PM - 1:50 PM (Peak)</option>
+              <option value="Mon,Wed,Fri|2:00 PM - 2:50 PM">M W F &bull; 2:00 PM - 2:50 PM (Peak)</option>
+              <option value="Mon,Wed,Fri|3:00 PM - 3:50 PM">M W F &bull; 3:00 PM - 3:50 PM</option>
+            </optgroup>
+            <optgroup label="T R (75 min blocks)">
+              <option value="Tue,Thu|8:00 AM - 9:15 AM">T R &bull; 8:00 AM - 9:15 AM</option>
+              <option value="Tue,Thu|9:35 AM - 10:50 AM">T R &bull; 9:35 AM - 10:50 AM (Peak)</option>
+              <option value="Tue,Thu|11:00 AM - 12:15 PM">T R &bull; 11:00 AM - 12:15 PM (Peak)</option>
+              <option value="Tue,Thu|12:35 PM - 1:50 PM">T R &bull; 12:35 PM - 1:50 PM (Peak)</option>
+              <option value="Tue,Thu|2:00 PM - 3:15 PM">T R &bull; 2:00 PM - 3:15 PM (Peak)</option>
+              <option value="Tue,Thu|3:35 PM - 4:50 PM">T R &bull; 3:35 PM - 4:50 PM</option>
+              <option value="Tue,Thu|5:00 PM - 6:15 PM">T R &bull; 5:00 PM - 6:15 PM</option>
+              <option value="Tue,Thu|6:30 PM - 7:45 PM">T R &bull; 6:30 PM - 7:45 PM</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="input-group">
+          <div class="input-label">Max Students</div>
+          <input id="nc-cap" class="input-field" type="number" placeholder="e.g. 30" min="1" max="500">
+        </div>
+        <div id="nc-err" class="login-error"></div>
+      </div>
+      <div class="footer-pad"><button id="nc-save" class="btn primary" onclick="saveNewClass()">Save Class</button></div>`;
+    return;
+  }
+
+  /* DASHBOARD */
+  if(phase==='dashboard'){
+    const cls=activeClass||{};
+    app.innerHTML=`
+      <div class="isu-header">
+        <div><div class="isu-header-title">${cls.code||''} &middot; ${cls.section||''}</div><div class="isu-header-sub">${cls.name||''}</div></div>
+        <button class="isu-back-btn" onclick="phase='class';render()">&#8592;</button>
+      </div>
+      <div style="flex:1; overflow-y:auto;">
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-num green">${cls.capacity||STUDENTS.length}</div><div class="stat-lbl">Enrolled</div></div>
+          <div class="stat-card"><div class="stat-num gray">${totalDashSessions}</div><div class="stat-lbl">Sessions</div></div>
+          <div class="stat-card"><div class="stat-num amber">${totalDashSessions > 0 ? avgDashRate + '%' : '&#8212;'}</div><div class="stat-lbl">Avg Rate</div></div>
+        </div>
+        <div class="section-label"><span>Roster</span><span>${STUDENTS.length} students</span></div>
+        ${STUDENTS.length===0?'<div class="empty-state">No students found.</div>':STUDENTS.map(s=>`
+          <div class="student-row">
+            <div class="avatar">${s.name.charAt(0)}</div>
+            <div class="student-info"><div class="student-name">${s.name}</div><div class="student-id">${s.barcode}</div></div>
+            <span class="status-pill absent">&#8212;</span>
+          </div>`).join('')}
+      </div>
+      <div class="footer-pad"><button class="btn primary" onclick="goToSessionStart()">+ Start New Session</button></div>
+      ${bottomNav()}`;
+    return;
+  }
+
+  /* SESSION START */
+  if(phase==='session-start'){
+    const cls=activeClass||{};
+    app.innerHTML=`
+      <div class="isu-header">
+        <div><div class="isu-header-title">New Session</div><div class="isu-header-sub">${cls.code||''} &middot; ${cls.section||''}</div></div>
+        <button class="isu-back-btn" onclick="openDashboard('${cls.id}')">Cancel</button>
+      </div>
+      <div style="padding:1rem; flex: 1; overflow-y: auto;">
+        <div style="font-size:11px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;font-weight:600;margin-bottom:.5rem;">Total Session Duration</div>
+        <div class="duration-grid">
+          <button class="dur-btn ${sessionSecs===300?'selected':''}" onclick="setDuration(300)">5 min</button>
+          <button class="dur-btn ${sessionSecs===360?'selected':''}" onclick="setDuration(360)">6 min</button>
+          <button class="dur-btn ${sessionSecs===600?'selected':''}" onclick="setDuration(600)">10 min</button>
+          <button class="dur-btn ${sessionSecs===1800?'selected':''}" onclick="setDuration(1800)">30 min</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;font-weight:600;margin-top:1.5rem;margin-bottom:.5rem;">Mark Tardy After</div>
+        <div class="duration-grid">
+          <button class="dur-btn tardy-btn ${tardyThresholdSecs===180?'selected':''}" data-secs="180" onclick="setTardyThreshold(180)">3 min</button>
+          <button class="dur-btn tardy-btn ${tardyThresholdSecs===300?'selected':''}" data-secs="300" onclick="setTardyThreshold(300)">5 min</button>
+          <button class="dur-btn tardy-btn ${tardyThresholdSecs===99999?'selected':''}" data-secs="99999" onclick="setTardyThreshold(99999)">Never</button>
+        </div>
+        <div class="note-box" id="dur-note">Session open for <strong>${fmtMins(sessionSecs)}</strong>.<br>Late after <strong>${tardyThresholdSecs === 99999 ? 'Never' : fmtMins(tardyThresholdSecs)}</strong>.</div>
+      </div>
+      <div class="footer-pad"><button class="btn primary" onclick="startSession()">Start Session &rsaquo;</button></div>`;
+    return;
+  }
+
+  /* SCANNING */
+  if(phase==='scanning'){
+    const cls=activeClass||{};
+    app.innerHTML=`
+      <div class="isu-header">
+        <div><div class="live-badge"><div class="live-dot"></div>Live</div></div>
+        <div id="timer" class="isu-timer">${fmt(remaining)}</div>
+        <div style="text-align:right;">
+          <div id="scan-count" style="font-size:13px;font-weight:600;color:#fff;">${totalIn()} / ${STUDENTS.length}</div>
+          <button class="isu-back-btn" onclick="endSession()" style="margin-top:4px;">End</button>
+        </div>
+      </div>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-mode="camera" onclick="switchScanMode('camera')">Scan</button>
+        <button class="tab-btn" data-mode="manual" onclick="switchScanMode('manual')">Manual</button>
+      </div>
+      <div id="camera-wrap" >
+        <div class="reticle"><div class="reticle-inner"></div><div class="scanline"></div></div>
+      </div>
+      <div id="scan-toast" class="toast empty">Hold barcode steady</div>
+      <div id="manual-wrap" style="display:none; flex:1; overflow-y:auto;">
+        <div id="manual-list">${STUDENTS.map(s=>manualRowHTML(s)).join('')}</div>
+      </div>`;
+    return;
+  }
+
+  /* SUMMARY */
+  if(phase==='summary'){
+    const pc=presentCount(),lc=lateCount(),ac=absentCount();
+    const cls=activeClass||{};
+    app.innerHTML=`
+      <div class="isu-header">
+        <div><div class="isu-header-title">Session Complete</div></div>
+      </div>
+      <div style="flex:1; overflow-y:auto;">
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-num green sum-num">${pc}</div><div class="stat-lbl">Present</div></div>
+          <div class="stat-card"><div class="stat-num amber sum-num">${lc}</div><div class="stat-lbl">Tardy</div></div>
+          <div class="stat-card"><div class="stat-num gray sum-num">${ac}</div><div class="stat-lbl">Absent</div></div>
+        </div>
+        <div id="summary-roster">${STUDENTS.map(s=>summaryRowHTML(s)).join('')}</div>
+      </div>
+      <div class="footer-pad">
+        <button class="btn primary" onclick="resetApp()">New Session</button>
+        <button class="btn secondary" onclick="openDashboard('${cls.id}')">&#8592; Back to Dashboard</button>
+      </div>`;
+    return;
+  }
+
+  /* HISTORY */
+  if(phase==='history'){
+    const cls=activeClass||{};
+    function fmtHistDate(dateStr){
+      if(!dateStr) return {full: 'Unknown date', dow: ''};
+      const d=new Date(dateStr+'T12:00:00');
+      return { full: d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}), dow: d.toLocaleDateString('en-US',{weekday:'long'}) };
+    }
+    function histCardHTML(sess){
+      const att=sess.attendance||{};
+      const studs=STUDENTS.map(s=>{const r=att[s.id];return r?{...s,status:r.late?'late':'present',time:fmtTime(r.scannedAt),late:r.late}:{...s,status:'absent',time:null};});
+      const pc=studs.filter(s=>s.status==='present').length, lc=studs.filter(s=>s.status==='late').length, ac=studs.filter(s=>s.status==='absent').length;
+      const ld=fmtHistDate(sess.date);
+      const isSelected=selectedSession&&selectedSession.id===sess.id;
+      return `
+        <div class="hist-card" onclick="selectedSession=${isSelected ? 'null' : `historyData.find(h=>h.id==='${sess.id}')`}; render()" style="cursor:pointer;">
+          <div class="hist-card-header">
+            <div><div class="hist-date">${sess.startedAt?fmtTime(sess.startedAt):'--:--'}</div><div class="hist-dow">${ld.dow}</div></div>
+            <div class="hist-present-badge"><div class="hist-present-dot"></div>${pc+lc}/${STUDENTS.length} In</div>
+          </div>
+          <div class="hist-stats">
+            <div class="hist-stat-box"><div class="hist-stat-lbl">Absent</div><div class="hist-stat-num ${ac>0?'red':'muted'}">${ac}</div></div>
+            <div class="hist-stat-box"><div class="hist-stat-lbl">Late</div><div class="hist-stat-num ${lc>0?'amber':'muted'}">${lc}</div></div>
+          </div>
+        </div>
+        ${isSelected ? detailPanelHTML(sess, studs) : ''}`;
+    }
+    function detailPanelHTML(sess, studs){
+      const ld=fmtHistDate(sess.date);
+      const absentStuds=studs.filter(s=>s.status==='absent'), lateStuds=studs.filter(s=>s.status==='late');
+      return `
+        <div class="detail-panel">
+          <div class="detail-panel-header"><div class="detail-panel-date">${ld.full}</div></div>
+          ${absentStuds.map(s=>`<div class="detail-student-row"><div class="detail-avatar">${s.name.slice(0,2)}</div><div><div class="detail-student-name">${s.name}</div></div></div>`).join('')}
+        </div>`;
+    }
+    let historyListHTML = '';
+    let lastDate = null;
+    historyData.forEach(sess => {
+      const ld = fmtHistDate(sess.date);
+      if (ld.full !== lastDate) {
+        historyListHTML += `<div style="font-size:12px;font-weight:700;color:var(--text3);margin:1.5rem 1rem 0.75rem;">${ld.full}</div>`;
+        lastDate = ld.full;
+      }
+      historyListHTML += histCardHTML(sess);
+    });
+    app.innerHTML=`<div class="isu-header"><div><div class="isu-header-title">History</div></div></div>
+      <div style="flex:1;overflow-y:auto;background:var(--bg3);">${historyListHTML}</div>${bottomNav()}`;
+    return;
+  }
+
+  /* SEMESTER REPORT */
+  if(phase==='report'){
+    app.innerHTML=`<div class="isu-header"><div><div class="isu-header-title">Semester Report</div></div></div>
+      <div style="flex:1;overflow-y:auto;background:var(--bg3);padding:0.5rem 0;">
+        ${reportData.map(s=>{
+          return `<div class="hist-card">
+              <div style="display:flex;justify-content:space-between;"><div>${s.name}</div><div>${s.rate}%</div></div>
+              <div style="background:var(--bg2);height:6px;margin:8px 0;"><div style="width:${s.rate}%;height:100%;background:var(--isu);"></div></div>
+            </div>`;
+        }).join('')}
+      </div>${bottomNav()}`;
+    return;
+  }
+}
+
+/* ─── Redbird ─────────────────────────────────────────────── */
+function initBird(){
+  clearInterval(birdInterval);
+  const CV=document.getElementById('redbird');if(!CV)return;
+  const cx=CV.getContext('2d');cx.imageSmoothingEnabled=false;
+  const Z=CV.width/16;
+  const _R='#cc0000',_M='#aa0000',_D='#880000',_X='#550000',_H='#ee3333',_K='#0d0d0d',_Y='#ffcc00',_O='#e07020',_B='#b04800',_W='#8b5e3c',_G='#c45c00';
+  function p(x,y,c){cx.fillStyle=c;cx.fillRect(x*Z,y*Z,Z,Z);}
+  function base(){
+    p(9,0,_R);p(8,1,_R);p(9,1,_R);p(7,2,_R);p(8,2,_R);p(9,2,_R);p(7,3,_R);p(8,3,_R);p(9,3,_R);p(10,3,_R);p(8,4,_R);p(9,4,_R);p(10,4,_R);p(11,4,_R);
+    p(7,5,_R);p(8,5,_R);p(9,5,_R);p(10,5,_R);p(11,5,_R);p(12,5,_R);p(9,6,_R);p(10,6,_R);p(13,6,_R);p(14,6,_R);
+    p(9,7,_R);p(10,7,_R);p(11,7,_R);p(12,7,_R);p(13,7,_R);p(9,8,_R);p(10,8,_R);p(11,8,_R);p(12,8,_R);
+    p(4,5,_K);p(5,5,_K);p(6,5,_K);p(7,5,_K);p(4,6,_K);p(5,6,_K);p(6,6,_K);p(7,6,_K);p(8,6,_K);p(9,6,_K);p(10,6,_K);p(11,6,_K);p(12,6,_K);
+    p(4,7,_K);p(5,7,_K);p(6,7,_K);p(7,7,_K);p(8,7,_K);p(5,8,_K);p(6,8,_K);p(7,8,_K);p(11,6,_K);p(12,6,_Y);
+    p(14,6,_O);p(15,6,_O);p(16,6,_O);p(17,6,_O);p(14,7,_O);p(15,7,_O);p(16,7,_O);p(17,7,_O);p(18,7,_O);p(14,8,_B);p(15,8,_B);p(16,8,_B);p(17,8,_B);
+    p(8,8,_R);p(9,8,_R);p(10,8,_R);p(11,8,_R);p(12,8,_R);p(13,8,_R);p(7,9,_R);p(8,9,_R);p(9,9,_R);p(10,9,_R);p(11,9,_R);p(12,9,_R);p(13,9,_R);
+    for(let x=4;x<=13;x++){p(x,10,_R);p(x,11,_R);p(x,12,_R);}
+    for(let x=5;x<=13;x++)p(x,13,_R);for(let x=5;x<=12;x++)p(x,14,_R);for(let x=6;x<=11;x++)p(x,15,_R);for(let x=7;x<=10;x++)p(x,16,_R);
+    p(4,10,_M);p(4,11,_M);p(4,12,_M);p(5,13,_M);p(5,14,_M);p(9,10,_H);p(10,10,_H);p(9,11,_H);p(10,11,_H);p(3,11,_M);p(3,12,_M);
+    p(12,13,_D);p(12,14,_D);p(11,14,_D);p(14,10,_M);p(15,10,_M);p(16,10,_D);p(14,11,_D);p(15,11,_D);p(16,11,_X);p(17,11,_X);
+    p(14,12,_D);p(15,12,_X);p(16,12,_X);p(13,13,_D);p(14,13,_X);p(15,13,_X);p(13,14,_X);p(14,14,_X);p(13,15,_X);
+    p(7,17,_G);p(7,18,_G);p(7,19,_G);p(9,17,_G);p(9,18,_G);p(9,19,_G);
+    p(5,20,_G);p(6,20,_G);p(7,20,_G);p(8,20,_G);p(9,20,_G);p(10,20,_G);p(11,20,_G);p(4,20,_W);p(12,20,_W);
+  }
+  const frames=[
+    {L:[[3,12],[3,13],[2,12],[2,13]],R:[[12,14],[11,15],[12,15]]},
+    {L:[[3,11],[3,12],[2,11],[2,12]],R:[[12,13],[11,14],[12,14]]},
+    {L:[[2,10],[3,11],[2,11],[3,12]],R:[[12,13],[11,13],[12,14]]},
+    {L:[[2,9],[3,10],[2,10],[3,11]], R:[[11,12],[12,13],[11,13]]},
+    {L:[[2,10],[3,11],[2,11],[3,12]],R:[[12,13],[11,13],[12,14]]},
+    {L:[[3,12],[3,13],[2,12],[2,13]],R:[[12,14],[11,15],[12,15]]},
+    {L:[[3,13],[3,14],[2,13],[2,14]],R:[[12,15],[11,15],[12,16]]},
+    {L:[[3,14],[3,15],[2,14],[2,15]],R:[[12,15],[12,16],[11,16]]},
+    {L:[[3,14],[3,15],[2,15],[3,16]],R:[[12,16],[12,17],[11,16]]},
+    {L:[[3,13],[3,14],[2,13],[2,14]],R:[[12,15],[11,15],[12,16]]},
+  ];
+  let f=0;
+  function draw(){cx.clearRect(0,0,CV.width,CV.height);base();for(const[x,y]of frames[f].L)p(x,y,_M);for(const[x,y]of frames[f].R)p(x,y,_D);}
+  draw(); birdInterval=setInterval(()=>{f=(f+1)%frames.length;draw();},150);
+}
+
+render();
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/Attendance/sw.js'));
+</script>
+</body>
+</html>
