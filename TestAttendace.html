@@ -49,6 +49,7 @@ body {
 }
 #app {
   width: 100%; max-width: 550px; height: 95vh; background: var(--bg);
+  color: var(--text);
   border-radius: var(--r-lg); border: 0.5px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.3);
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -1163,20 +1164,61 @@ function render(){
             <div class="hist-present-badge"><div class="hist-present-dot"></div>${pc+lc}/${STUDENTS.length} In</div>
           </div>
           <div class="hist-stats">
-            <div class="hist-stat-box"><div class="hist-stat-lbl">Absent</div><div class="hist-stat-num ${ac>0?'red':'muted'}">${ac}</div></div>
+            <div class="hist-stat-box"><div class="hist-stat-lbl">Present</div><div class="hist-stat-num" style="color:${pc>0?'var(--green)':'var(--text3)'};">${pc}</div></div>
             <div class="hist-stat-box"><div class="hist-stat-lbl">Late</div><div class="hist-stat-num ${lc>0?'amber':'muted'}">${lc}</div></div>
+            <div class="hist-stat-box"><div class="hist-stat-lbl">Absent</div><div class="hist-stat-num ${ac>0?'red':'muted'}">${ac}</div></div>
           </div>
         </div>
         ${isSelected ? detailPanelHTML(sess, studs) : ''}`;
     }
     function detailPanelHTML(sess, studs){
       const ld=fmtHistDate(sess.date);
-      const absentStuds=studs.filter(s=>s.status==='absent'), lateStuds=studs.filter(s=>s.status==='late');
+      const absentStuds=studs.filter(s=>s.status==='absent');
+      const lateStuds=studs.filter(s=>s.status==='late');
+      const presentStuds=studs.filter(s=>s.status==='present'); 
+ 
       return `
         <div class="detail-panel">
-          <div class="detail-panel-header"><div class="detail-panel-date">${ld.full}</div></div>
-          ${absentStuds.map(s=>`<div class="detail-student-row"><div class="detail-avatar">${s.name.slice(0,2)}</div><div><div class="detail-student-name">${s.name}</div></div></div>`).join('')}
-        </div>`;
+          <div class="detail-panel-header">
+            <div class="detail-panel-label">Session Details</div>
+            <div class="detail-panel-date">${ld.full}</div>
+            <div class="detail-panel-sub">${cls.code||''} ${cls.section||''}</div>
+          </div>
+          ${presentStuds.length>0?`
+            <div class="detail-group-label" style="color:var(--green);">&#10003; Present (${presentStuds.length})</div>
+            ${presentStuds.map(s=>`
+              <div class="detail-student-row">
+                <div class="detail-avatar" style="background:var(--green-bg);color:var(--green);">${s.name.slice(0,2).toUpperCase()}</div>
+                <div>
+                  <div class="detail-student-name">${s.name}</div>
+                  <div class="detail-student-id">ID: ${s.barcode}${s.time?' &bull; In at '+s.time:''}</div>
+                </div>
+              </div>`).join('')}`:''}
+          ${lateStuds.length>0?`
+            <div class="detail-group-label" style="color:var(--amber);">&#128336; Late (${lateStuds.length})</div>
+            ${lateStuds.map(s=>`
+              <div class="detail-student-row">
+                <div class="detail-avatar" style="background:var(--amber-bg);color:var(--amber);">${s.name.slice(0,2).toUpperCase()}</div>
+                <div>
+                  <div class="detail-student-name">${s.name}</div>
+                  <div class="detail-student-id">ID: ${s.barcode}${s.time?' &bull; In at '+s.time:''}</div>
+                </div>
+              </div>`).join('')}`:''}
+          ${absentStuds.length>0?`
+            <div class="detail-group-label" style="color:var(--text);">&#128683; Absent (${absentStuds.length})</div>
+            ${absentStuds.map(s=>`
+              <div class="detail-student-row">
+                <div class="detail-avatar">${s.name.slice(0,2).toUpperCase()}</div>
+                <div>
+                  <div class="detail-student-name">${s.name}</div>
+                  <div class="detail-student-id">ID: ${s.barcode}</div>
+                </div>
+        
+              </div>`).join('')}`:''}
+        </div>
+        <button class="detail-edit-btn" onclick="attendance=Object.fromEntries(Object.entries(historyData.find(h=>h.id==='${sess.id}')?.attendance||{}).map(([k,v])=>[k,{...v,scannedAt:v.scannedAt?.toDate?v.scannedAt.toDate():new Date(v.scannedAt)}]));sessionDocID='${sess.id}';phase='summary';render()">
+          Edit Attendance Record
+        </button>`;
     }
     let historyListHTML = '';
     let lastDate = null;
